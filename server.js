@@ -1,17 +1,17 @@
-// server.js - Complete Backend API
+// server.js - Fixed Backend API
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
-const QRCode = require('qrcode');
+const QRCodeGenerator = require('qrcode'); // Renamed from QRCode
 
 const app = express();
 
 // Middleware
 app.use(cors({
-    origin: ['http://localhost:3000', 'http://127.0.0.1:5500', 'https://in-attendance-system.onrender.com'],
+    origin: ['http://localhost:3000', 'http://127.0.0.1:5500', 'https://in-attendance-system.onrender.com', '*'],
     credentials: true
 }));
 app.use(express.json());
@@ -89,7 +89,7 @@ const courseSchema = new mongoose.Schema({
 });
 
 const User = mongoose.model('User', userSchema);
-const QRCode = mongoose.model('QRCode', qrCodeSchema);
+const QRCodeModel = mongoose.model('QRCode', qrCodeSchema); // Changed to QRCodeModel
 const Attendance = mongoose.model('Attendance', attendanceSchema);
 const Course = mongoose.model('Course', courseSchema);
 
@@ -160,6 +160,21 @@ const formatTime = (date) => {
 
 // ==================== AUTHENTICATION ROUTES ====================
 
+// Root endpoint
+app.get('/', (req, res) => {
+    res.json({ 
+        message: 'IN Attendance System Backend API',
+        status: 'running',
+        endpoints: {
+            auth: '/api/auth',
+            student: '/api/students',
+            lecturer: '/api/lecturers',
+            admin: '/api/admin',
+            attendance: '/api/attendance'
+        }
+    });
+});
+
 // Health Check
 app.get('/api/health', (req, res) => {
     res.json({ 
@@ -174,6 +189,8 @@ app.get('/api/health', (req, res) => {
 app.post('/api/auth/register', async (req, res) => {
     try {
         const { role, name, id, email, phone, password } = req.body;
+
+        console.log('Registration attempt:', { role, name, id, email });
 
         // Validation
         if (!role || !name || !id || !email || !phone || !password) {
@@ -238,7 +255,7 @@ app.post('/api/auth/register', async (req, res) => {
         console.error('Registration error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server error during registration'
+            message: 'Server error during registration: ' + error.message
         });
     }
 });
@@ -247,6 +264,8 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/login', async (req, res) => {
     try {
         const { id, password, role } = req.body;
+
+        console.log('Login attempt:', { id, role });
 
         // Validation
         if (!id || !password || !role) {
@@ -261,7 +280,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (!user) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid credentials'
+                message: 'Invalid credentials - user not found'
             });
         }
 
@@ -270,7 +289,7 @@ app.post('/api/auth/login', async (req, res) => {
         if (!isPasswordValid) {
             return res.status(401).json({
                 success: false,
-                message: 'Invalid credentials'
+                message: 'Invalid credentials - wrong password'
             });
         }
 
@@ -300,7 +319,7 @@ app.post('/api/auth/login', async (req, res) => {
         console.error('Login error:', error);
         res.status(500).json({
             success: false,
-            message: 'Server error during login'
+            message: 'Server error during login: ' + error.message
         });
     }
 });
@@ -316,11 +335,11 @@ app.get('/api/students/:id/dashboard', authenticate, authorize('student', 'admin
         const attendance = await Attendance.find({ studentId });
         
         // Get all QR codes (as total possible classes)
-        const totalQR = await QRCode.countDocuments();
+        const totalQR = await QRCodeModel.countDocuments();
         
         const attendedClasses = attendance.length;
         const attendancePercentage = totalQR > 0 ? Math.round((attendedClasses / totalQR) * 100) : 0;
-        const missedClasses = totalQR - attendedClasses;
+        const missedClasses = Math.max(0, totalQR - attendedClasses);
 
         // Get recent attendance
         const recentAttendance = attendance
@@ -349,7 +368,7 @@ app.get('/api/students/:id/dashboard', authenticate, authorize('student', 'admin
         console.error('Dashboard error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading dashboard'
+            message: 'Error loading dashboard: ' + error.message
         });
     }
 });
@@ -381,7 +400,7 @@ app.get('/api/students/:id/attendance', authenticate, authorize('student', 'admi
         console.error('Attendance error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading attendance'
+            message: 'Error loading attendance: ' + error.message
         });
     }
 });
@@ -449,7 +468,7 @@ app.put('/api/students/:id', authenticate, authorize('student', 'admin'), async 
         console.error('Update profile error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error updating profile'
+            message: 'Error updating profile: ' + error.message
         });
     }
 });
@@ -461,6 +480,8 @@ app.post('/api/attendance/scan', authenticate, authorize('student'), async (req,
     try {
         const { qrCode, scanTime } = req.body;
         const studentId = req.user.id;
+
+        console.log('Scan attempt by student:', studentId);
 
         // Parse QR code
         let qrData;
@@ -477,19 +498,19 @@ app.post('/api/attendance/scan', authenticate, authorize('student'), async (req,
         if (!qrData.qrCodeId) {
             return res.status(400).json({
                 success: false,
-                message: 'Invalid QR code data'
+                message: 'Invalid QR code data - no QR code ID'
             });
         }
 
         // Check QR code in database
-        const qrCodeRecord = await QRCode.findOne({ 
+        const qrCodeRecord = await QRCodeModel.findOne({ 
             qrCodeId: qrData.qrCodeId 
         });
 
         if (!qrCodeRecord) {
             return res.status(404).json({
                 success: false,
-                message: 'QR code not found'
+                message: 'QR code not found in database'
             });
         }
 
@@ -543,6 +564,8 @@ app.post('/api/attendance/scan', authenticate, authorize('student'), async (req,
 
         await attendance.save();
 
+        console.log('Attendance recorded successfully:', attendance);
+
         res.json({
             success: true,
             message: 'Attendance recorded successfully',
@@ -559,7 +582,7 @@ app.post('/api/attendance/scan', authenticate, authorize('student'), async (req,
         console.error('Scan error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error recording attendance'
+            message: 'Error recording attendance: ' + error.message
         });
     }
 });
@@ -570,6 +593,8 @@ app.post('/api/attendance/scan', authenticate, authorize('student'), async (req,
 app.post('/api/lecturers/generate-qr', authenticate, authorize('lecturer', 'admin'), async (req, res) => {
     try {
         const { unitName, unitCode, duration, classType, topic } = req.body;
+
+        console.log('QR generation request by:', req.user.id);
 
         // Validation
         if (!unitName || !unitCode || !duration) {
@@ -601,7 +626,7 @@ app.post('/api/lecturers/generate-qr', authenticate, authorize('lecturer', 'admi
         };
 
         // Save to database
-        const qrCodeRecord = new QRCode({
+        const qrCodeRecord = new QRCodeModel({
             qrCodeId,
             unitName,
             unitCode,
@@ -618,6 +643,8 @@ app.post('/api/lecturers/generate-qr', authenticate, authorize('lecturer', 'admi
 
         await qrCodeRecord.save();
 
+        console.log('QR code generated successfully:', qrCodeId);
+
         res.json({
             success: true,
             message: 'QR code generated successfully',
@@ -628,7 +655,7 @@ app.post('/api/lecturers/generate-qr', authenticate, authorize('lecturer', 'admi
         console.error('Generate QR error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error generating QR code'
+            message: 'Error generating QR code: ' + error.message
         });
     }
 });
@@ -639,7 +666,7 @@ app.get('/api/lecturers/:id/dashboard', authenticate, authorize('lecturer', 'adm
         const lecturerId = req.params.id;
 
         // Get lecturer's QR codes
-        const qrCodes = await QRCode.find({ lecturerId });
+        const qrCodes = await QRCodeModel.find({ lecturerId });
         const totalClasses = qrCodes.length;
         
         // Get active QR codes
@@ -689,7 +716,7 @@ app.get('/api/lecturers/:id/dashboard', authenticate, authorize('lecturer', 'adm
         console.error('Lecturer dashboard error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading dashboard'
+            message: 'Error loading dashboard: ' + error.message
         });
     }
 });
@@ -699,7 +726,7 @@ app.get('/api/lecturers/:id/qr-codes', authenticate, authorize('lecturer', 'admi
     try {
         const lecturerId = req.params.id;
 
-        const qrCodes = await QRCode.find({ lecturerId })
+        const qrCodes = await QRCodeModel.find({ lecturerId })
             .sort({ createdAt: -1 })
             .lean();
 
@@ -725,7 +752,7 @@ app.get('/api/lecturers/:id/qr-codes', authenticate, authorize('lecturer', 'admi
         console.error('Get QR codes error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading QR codes'
+            message: 'Error loading QR codes: ' + error.message
         });
     }
 });
@@ -736,7 +763,7 @@ app.get('/api/lecturers/qr-codes/:id/attendance', authenticate, authorize('lectu
         const qrCodeId = req.params.id;
 
         // Get QR code
-        const qrCode = await QRCode.findOne({ qrCodeId });
+        const qrCode = await QRCodeModel.findOne({ qrCodeId });
         if (!qrCode) {
             return res.status(404).json({
                 success: false,
@@ -766,7 +793,7 @@ app.get('/api/lecturers/qr-codes/:id/attendance', authenticate, authorize('lectu
         console.error('Get attendance error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading attendance'
+            message: 'Error loading attendance: ' + error.message
         });
     }
 });
@@ -779,7 +806,7 @@ app.get('/api/admin/dashboard', authenticate, authorize('admin'), async (req, re
         // Get statistics
         const totalStudents = await User.countDocuments({ role: 'student' });
         const totalLecturers = await User.countDocuments({ role: 'lecturer' });
-        const totalCourses = await QRCode.distinct('unitCode').countDocuments();
+        const totalCourses = await QRCodeModel.distinct('unitCode').countDocuments();
         
         // Calculate attendance
         const totalAttendance = await Attendance.countDocuments();
@@ -794,7 +821,7 @@ app.get('/api/admin/dashboard', authenticate, authorize('admin'), async (req, re
             .limit(5)
             .lean();
 
-        const recentQRCodes = await QRCode.find()
+        const recentQRCodes = await QRCodeModel.find()
             .sort({ createdAt: -1 })
             .limit(5)
             .lean();
@@ -832,7 +859,7 @@ app.get('/api/admin/dashboard', authenticate, authorize('admin'), async (req, re
         console.error('Admin dashboard error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading admin dashboard'
+            message: 'Error loading admin dashboard: ' + error.message
         });
     }
 });
@@ -850,7 +877,7 @@ app.get('/api/admin/students', authenticate, authorize('admin'), async (req, res
                 const attendanceCount = await Attendance.countDocuments({ 
                     studentId: student.id 
                 });
-                const totalQR = await QRCode.countDocuments();
+                const totalQR = await QRCodeModel.countDocuments();
                 const attendancePercentage = totalQR > 0 
                     ? Math.round((attendanceCount / totalQR) * 100) 
                     : 0;
@@ -872,7 +899,7 @@ app.get('/api/admin/students', authenticate, authorize('admin'), async (req, res
         console.error('Get students error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading students'
+            message: 'Error loading students: ' + error.message
         });
     }
 });
@@ -897,7 +924,7 @@ app.get('/api/admin/students/:id/analytics', authenticate, authorize('admin'), a
             .lean();
 
         // Calculate stats
-        const totalQR = await QRCode.countDocuments();
+        const totalQR = await QRCodeModel.countDocuments();
         const attendedClasses = attendance.length;
         const attendancePercentage = totalQR > 0 
             ? Math.round((attendedClasses / totalQR) * 100) 
@@ -923,7 +950,7 @@ app.get('/api/admin/students/:id/analytics', authenticate, authorize('admin'), a
         console.error('Student analytics error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading student analytics'
+            message: 'Error loading student analytics: ' + error.message
         });
     }
 });
@@ -988,7 +1015,7 @@ app.post('/api/admin/users', authenticate, authorize('admin'), async (req, res) 
         console.error('Create user error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error creating user'
+            message: 'Error creating user: ' + error.message
         });
     }
 });
@@ -1019,7 +1046,7 @@ app.delete('/api/admin/users/:id', authenticate, authorize('admin'), async (req,
         console.error('Delete user error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error deleting user'
+            message: 'Error deleting user: ' + error.message
         });
     }
 });
@@ -1071,7 +1098,7 @@ app.post('/api/courses', authenticate, authorize('lecturer', 'admin'), async (re
         console.error('Create course error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error creating course'
+            message: 'Error creating course: ' + error.message
         });
     }
 });
@@ -1102,7 +1129,105 @@ app.get('/api/courses', authenticate, async (req, res) => {
         console.error('Get courses error:', error);
         res.status(500).json({
             success: false,
-            message: 'Error loading courses'
+            message: 'Error loading courses: ' + error.message
+        });
+    }
+});
+
+// ==================== PUBLIC TEST ROUTES ====================
+
+// Test route to check if server is working
+app.get('/test', (req, res) => {
+    res.json({
+        message: 'Server is working!',
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development'
+    });
+});
+
+// Initialize database with sample data
+app.post('/api/init-sample-data', async (req, res) => {
+    try {
+        // Check if we already have data
+        const userCount = await User.countDocuments();
+        
+        if (userCount > 0) {
+            return res.json({
+                success: false,
+                message: 'Database already has data'
+            });
+        }
+
+        // Create sample admin
+        const adminPassword = await bcrypt.hash('admin123', 10);
+        const admin = new User({
+            id: 'AD001',
+            name: 'System Admin',
+            email: 'admin@school.edu',
+            phone: '+254712345678',
+            password: adminPassword,
+            role: 'admin',
+            department: 'Administration'
+        });
+        await admin.save();
+
+        // Create sample lecturer
+        const lecturerPassword = await bcrypt.hash('lecturer123', 10);
+        const lecturer = new User({
+            id: 'LT001',
+            name: 'Dr. John Smith',
+            email: 'john.smith@school.edu',
+            phone: '+254723456789',
+            password: lecturerPassword,
+            role: 'lecturer',
+            department: 'Computer Science'
+        });
+        await lecturer.save();
+
+        // Create sample students
+        const students = [
+            {
+                id: 'ST001',
+                name: 'Alice Johnson',
+                email: 'alice@student.edu',
+                phone: '+254734567890',
+                password: await bcrypt.hash('student123', 10),
+                role: 'student',
+                course: 'Computer Science',
+                year: 2
+            },
+            {
+                id: 'ST002',
+                name: 'Bob Williams',
+                email: 'bob@student.edu',
+                phone: '+254745678901',
+                password: await bcrypt.hash('student123', 10),
+                role: 'student',
+                course: 'Software Engineering',
+                year: 3
+            }
+        ];
+
+        for (const studentData of students) {
+            const student = new User(studentData);
+            await student.save();
+        }
+
+        res.json({
+            success: true,
+            message: 'Sample data initialized successfully',
+            data: {
+                admin: { id: admin.id, password: 'admin123' },
+                lecturer: { id: lecturer.id, password: 'lecturer123' },
+                students: students.map(s => ({ id: s.id, password: 'student123' }))
+            }
+        });
+
+    } catch (error) {
+        console.error('Init sample data error:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Error initializing sample data: ' + error.message
         });
     }
 });
@@ -1113,7 +1238,9 @@ app.get('/api/courses', authenticate, async (req, res) => {
 app.use((req, res) => {
     res.status(404).json({
         success: false,
-        message: 'API endpoint not found'
+        message: 'API endpoint not found',
+        path: req.path,
+        method: req.method
     });
 });
 
@@ -1122,7 +1249,7 @@ app.use((err, req, res, next) => {
     console.error('Server error:', err);
     res.status(500).json({
         success: false,
-        message: 'Internal server error'
+        message: 'Internal server error: ' + err.message
     });
 });
 
@@ -1131,7 +1258,12 @@ app.use((err, req, res, next) => {
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log(`🚀 Server running on port ${PORT}`);
-    console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
-    console.log(`🎯 Frontend URL: https://in-attendance-system.onrender.com`);
+    console.log(`
+🚀 IN Attendance System Backend
+📡 Server running on port ${PORT}
+🔗 Local: http://localhost:${PORT}
+🌐 Public: https://in-attendance-backend.onrender.com
+📊 Health check: http://localhost:${PORT}/api/health
+🎯 Frontend URL: https://in-attendance-system.onrender.com
+    `);
 });
