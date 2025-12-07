@@ -1,5 +1,5 @@
 {
-  "name": "attendance-system-backend",
+  "name": "in-attendance-backend",
   "version": "1.0.0",
   "description": "Real Attendance Management System Backend for IN System",
   "main": "server.js",
