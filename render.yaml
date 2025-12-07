@@ -1,0 +1,28 @@
+# Render Blueprint for IN Attendance System
+services:
+  - type: web
+    name: in-attendance-backend
+    env: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 3000
+      - key: MONGODB_URI
+        value: mongodb+srv://attendance_admin:muhidinaliko2006@cluster0.bneqb6q.mongodb.net/attendance?retryWrites=true&w=majority
+      - key: JWT_SECRET
+        generateValue: true
+      - key: FRONTEND_URL
+        value: https://in-attendance-system.onrender.com
+
+databases:
+  - name: attendance-mongodb
+    plan: free
+    region: oregon
+    databaseName: attendance
