@@ -1,7 +1,7 @@
 {
   "name": "in-attendance-backend",
   "version": "1.0.0",
-  "description": "Real Attendance Management System Backend for IN System",
+  "description": "Complete Attendance Management System Backend for IN System",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
@@ -13,7 +13,9 @@
     "qr-code",
     "school",
     "management",
-    "system"
+    "system",
+    "express",
+    "mongodb"
   ],
   "author": "IN System Team",
   "license": "MIT",
@@ -23,8 +25,7 @@
     "bcryptjs": "^2.4.3",
     "jsonwebtoken": "^9.0.2",
     "cors": "^2.8.5",
-    "dotenv": "^16.3.1",
-    "qrcode": "^1.5.3"
+    "dotenv": "^16.3.1"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"
